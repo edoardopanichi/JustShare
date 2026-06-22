@@ -610,6 +610,12 @@ function selectionDownloadUrl(code) {
   return `/api/rooms/${encodeURIComponent(code)}/selection/download?${params.toString()}`;
 }
 
+function previewUploadTitle(value, maxLength = 34) {
+  const title = String(value || "");
+  if (title.length <= maxLength) return title;
+  return `${title.slice(0, maxLength - 1)}...`;
+}
+
 function renderCollapsedUploads(tree, items, code) {
   const { files, folders, totalSize } = summarizeUploads(items);
   const shell = document.createElement("div");
@@ -699,6 +705,8 @@ function renderExpandedUploads(tree, items, code) {
   items.forEach((item, index) => {
     const card = document.createElement("label");
     card.className = `upload-item ${item.type}`;
+    const fullTitle = item.path || item.name;
+    card.title = fullTitle;
     card.style.setProperty("--angle", `${(index - (items.length - 1) / 2) * Math.min(7, 120 / Math.max(items.length, 1))}deg`);
     card.style.setProperty("--offset", `${Math.min(index, 12) * 8}px`);
     card.style.setProperty("--depth", item.depth);
@@ -716,7 +724,8 @@ function renderExpandedUploads(tree, items, code) {
     const icon = createUploadIcon(item, "item");
     const name = document.createElement("span");
     name.className = "upload-item-name";
-    name.textContent = item.path || item.name;
+    name.textContent = previewUploadTitle(fullTitle);
+    name.title = fullTitle;
     const meta = document.createElement("span");
     meta.className = "upload-item-meta";
     meta.textContent = item.type === "folder" ? formatFolderMeta(item) : formatBytes(item.size);
