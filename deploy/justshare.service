@@ -1,0 +1,16 @@
+[Unit]
+Description=JustShare local LAN sharing server
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/justshare
+Environment=JUSTSHARE_HOST=0.0.0.0
+Environment=JUSTSHARE_PORT=8787
+Environment=JUSTSHARE_STORAGE_DIR=/opt/justshare/data
+ExecStart=/opt/justshare/.venv/bin/python -m justshare
+Restart=on-failure
+User=justshare
+
+[Install]
+WantedBy=multi-user.target

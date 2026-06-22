@@ -1,0 +1,10 @@
+services:
+  justshare:
+    build: .
+    ports:
+      - "8787:8787"
+    environment:
+      JUSTSHARE_STORAGE_DIR: /data
+      JUSTSHARE_ROOM_TTL_SECONDS: "3600"
+    volumes:
+      - ./data:/data

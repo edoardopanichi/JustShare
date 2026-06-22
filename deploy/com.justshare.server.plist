@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "https://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.justshare.server</string>
+  <key>WorkingDirectory</key>
+  <string>/usr/local/justshare</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/local/justshare/.venv/bin/python</string>
+    <string>-m</string>
+    <string>justshare</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>JUSTSHARE_HOST</key>
+    <string>0.0.0.0</string>
+    <key>JUSTSHARE_PORT</key>
+    <string>8787</string>
+    <key>JUSTSHARE_STORAGE_DIR</key>
+    <string>/usr/local/justshare/data</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+</dict>
+</plist>

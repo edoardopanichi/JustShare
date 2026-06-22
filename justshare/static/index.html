@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>JustShare</title>
+    <link rel="stylesheet" href="/static/styles.css">
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <div>
+          <h1>JustShare</h1>
+          <p>Private room sharing on your local network.</p>
+        </div>
+      </header>
+
+      <section id="roomGate" class="gate">
+        <div class="gate-option primary-option">
+          <span>Start a new room</span>
+          <h2>Create a room</h2>
+          <p>JustShare will automatically generate a three-word code you can share with another device.</p>
+          <button id="createRoom" type="button">Create room code</button>
+        </div>
+        <div class="gate-option">
+          <span>Use an existing code</span>
+          <h2>Join a room</h2>
+          <p>Enter a code from another JustShare browser, for example <strong>red-yes-fly</strong>.</p>
+          <form id="joinForm">
+            <input id="roomInput" autocomplete="off" placeholder="red-yes-fly" aria-label="Room code">
+            <button type="submit">Join room</button>
+          </form>
+        </div>
+      </section>
+
+      <section id="status" class="status">Create a room or join one to start sharing.</section>
+
+      <section id="workspace" class="workspace hidden">
+        <section id="roomBanner" class="banner">
+          <div>
+            <span>Room</span>
+            <strong id="roomCode">not connected</strong>
+          </div>
+          <div class="actions">
+            <button id="copyRoom" type="button">Copy code</button>
+            <button id="leaveRoom" class="ghost" type="button">Leave room</button>
+          </div>
+        </section>
+
+        <section id="warning" class="warning hidden"></section>
+
+        <section id="editorGrid" class="grid">
+          <article class="panel">
+            <div class="panel-head">
+              <h2>Notepad</h2>
+              <button id="clearNotepad" class="ghost" type="button" disabled>Clear</button>
+            </div>
+            <textarea id="notepad" disabled spellcheck="true" placeholder="Shared notes appear here."></textarea>
+          </article>
+
+          <div id="editorSplitter" class="splitter" role="separator" aria-label="Resize Notepad and Code areas" aria-orientation="vertical" tabindex="0"></div>
+
+          <article class="panel">
+            <div class="panel-head">
+              <h2>Code</h2>
+              <div class="actions">
+                <button id="copyCode" class="ghost" type="button" disabled>Copy</button>
+                <button id="clearCode" class="ghost" type="button" disabled>Clear</button>
+              </div>
+            </div>
+            <div class="code-editor">
+              <pre id="codeHighlight" class="code-highlight" aria-hidden="true"></pre>
+              <textarea id="codeArea" class="code-input" disabled spellcheck="false" placeholder="Paste code or commands here."></textarea>
+            </div>
+          </article>
+
+          <article class="panel uploads">
+            <div class="panel-head">
+              <h2>Uploads</h2>
+              <button id="clearUploads" class="ghost danger" type="button" disabled>Clear uploads</button>
+            </div>
+            <div id="dropZone" class="drop-zone">
+              <strong>Drop files or folders here</strong>
+              <span>Folders keep their relative paths when the browser supports it.</span>
+            </div>
+            <div class="upload-controls">
+              <label class="button-like">
+                Choose files
+                <input id="filePicker" type="file" multiple disabled>
+              </label>
+              <button id="folderButton" type="button" disabled>Choose folder</button>
+              <input id="folderPicker" type="file" multiple webkitdirectory disabled>
+            </div>
+            <div id="uploadProgress" class="muted"></div>
+            <div id="tree" class="tree empty">No uploads yet.</div>
+          </article>
+        </section>
+      </section>
+    </main>
+    <script src="/static/app.js?v=20260622-6"></script>
+  </body>
+</html>
