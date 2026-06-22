@@ -5,7 +5,7 @@ import contextlib
 import shutil
 from pathlib import Path
 
-from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -18,6 +18,7 @@ from .storage import (
     UnsafePathError,
     build_tree,
     make_folder_zip,
+    make_selection_zip,
     remove_room_files,
     resolve_upload_path,
     room_upload_dir,
@@ -183,6 +184,36 @@ def create_app(config: Config | None = None) -> FastAPI:
             code = db.require_room(code)
             rows = db.list_uploads(code)
             zip_path = make_folder_zip(config.storage_dir, code, folder_path, rows)
+            db.touch_room(code)
+        except UnsafePathError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        except (KeyError, ValueError):
+            raise HTTPException(status_code=404, detail="Room not found.")
+        return FileResponse(zip_path, filename=zip_path.name, media_type="application/zip", background=DeleteParent(zip_path))
+
+    @app.get("/api/rooms/{code}/uploads/download")
+    async def download_uploads(code: str):
+        try:
+            code = db.require_room(code)
+            rows = db.list_uploads(code)
+            zip_path = make_folder_zip(config.storage_dir, code, "", rows)
+            db.touch_room(code)
+        except (KeyError, ValueError):
+            raise HTTPException(status_code=404, detail="Room not found.")
+        return FileResponse(zip_path, filename=zip_path.name, media_type="application/zip", background=DeleteParent(zip_path))
+
+    @app.get("/api/rooms/{code}/selection/download")
+    async def download_selection(
+        code: str,
+        file_id: list[str] = Query(default=[]),
+        folder_path: list[str] = Query(default=[]),
+    ):
+        if not file_id and not folder_path:
+            raise HTTPException(status_code=400, detail="Select at least one file or folder.")
+        try:
+            code = db.require_room(code)
+            rows = db.list_uploads(code)
+            zip_path = make_selection_zip(code, rows, file_id, folder_path)
             db.touch_room(code)
         except UnsafePathError as exc:
             raise HTTPException(status_code=400, detail=str(exc))

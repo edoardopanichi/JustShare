@@ -81,10 +81,27 @@ def make_folder_zip(storage_dir: Path, code: str, folder_path: str, rows: list[d
     safe_folder = sanitize_relative_path(folder_path) if folder_path else ""
     prefix = f"{safe_folder}/" if safe_folder else ""
     matches = [row for row in rows if row["relative_path"].startswith(prefix)]
+    return make_rows_zip(code, safe_folder, matches)
+
+
+def make_selection_zip(code: str, rows: list[dict], file_ids: list[str], folder_paths: list[str]) -> Path:
+    wanted_ids = set(file_ids)
+    wanted_folders = [sanitize_relative_path(path) for path in folder_paths if path]
+    matches = []
+    seen = set()
+    for row in rows:
+        if row["id"] in wanted_ids or any(row["relative_path"].startswith(f"{folder}/") for folder in wanted_folders):
+            if row["id"] not in seen:
+                matches.append(row)
+                seen.add(row["id"])
+    return make_rows_zip(code, "selection", matches)
+
+
+def make_rows_zip(code: str, label: str, rows: list[dict]) -> Path:
     temp_dir = Path(tempfile.mkdtemp(prefix="justshare-zip-"))
-    zip_path = temp_dir / f"{safe_folder.replace('/', '-') or code}-{uuid.uuid4().hex[:8]}.zip"
+    zip_path = temp_dir / f"{label.replace('/', '-') or code}-{uuid.uuid4().hex[:8]}.zip"
     with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
-        for row in matches:
+        for row in rows:
             source = Path(row["filesystem_path"])
             if source.exists() and source.is_file():
                 archive.write(source, arcname=row["relative_path"])

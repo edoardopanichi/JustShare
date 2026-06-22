@@ -4,15 +4,31 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>JustShare</title>
+    <link rel="icon" type="image/png" href="/static/favicon.png?v=20260622-6">
+    <link rel="apple-touch-icon" href="/static/favicon.png?v=20260622-6">
     <link rel="stylesheet" href="/static/styles.css">
   </head>
   <body>
     <main class="shell">
       <header class="topbar">
-        <div>
-          <h1>JustShare</h1>
-          <p>Private room sharing on your local network.</p>
+        <div class="brand">
+          <img src="/static/justshare_logo_mark.png?v=20260622-3" alt="" class="brand-logo" width="56" height="82">
+          <div>
+            <h1>JustShare</h1>
+            <p>Private room sharing on your local network.</p>
+          </div>
         </div>
+        <section id="roomBanner" class="room-chip hidden" aria-label="Current room">
+          <div class="room-chip-code">
+            <span>Room</span>
+            <strong id="roomCode">not connected</strong>
+          </div>
+          <div class="room-chip-actions">
+            <button id="shareRoom" class="share-button" type="button">Share</button>
+            <button id="copyRoom" type="button">Copy</button>
+            <button id="leaveRoom" class="ghost" type="button">Leave</button>
+          </div>
+        </section>
       </header>
 
       <section id="roomGate" class="gate">
@@ -36,20 +52,40 @@
       <section id="status" class="status">Create a room or join one to start sharing.</section>
 
       <section id="workspace" class="workspace hidden">
-        <section id="roomBanner" class="banner">
-          <div>
-            <span>Room</span>
-            <strong id="roomCode">not connected</strong>
-          </div>
-          <div class="actions">
-            <button id="copyRoom" type="button">Copy code</button>
-            <button id="leaveRoom" class="ghost" type="button">Leave room</button>
-          </div>
-        </section>
-
         <section id="warning" class="warning hidden"></section>
 
         <section id="editorGrid" class="grid">
+          <article class="panel uploads">
+            <div class="panel-head">
+              <h2>Uploads</h2>
+              <button id="clearUploads" class="ghost danger" type="button" disabled>Clear uploads</button>
+            </div>
+            <div class="upload-layout">
+              <div>
+                <div id="dropZone" class="drop-zone">
+                  <strong>Drop files or folders here</strong>
+                  <span>Folders keep their relative paths when the browser supports it.</span>
+                </div>
+                <div class="upload-controls">
+                  <label class="button-like">
+                    Choose files
+                    <input id="filePicker" type="file" multiple disabled>
+                  </label>
+                  <button id="folderButton" class="folder-button" type="button" disabled>Choose folder</button>
+                  <input id="folderPicker" type="file" multiple webkitdirectory disabled>
+                </div>
+                <div id="uploadProgress" class="upload-progress hidden" aria-live="polite">
+                  <div class="upload-progress-head">
+                    <span id="uploadProgressText">Preparing upload...</span>
+                    <button id="cancelUpload" class="ghost danger" type="button" disabled>Stop</button>
+                  </div>
+                  <progress id="uploadProgressBar" max="100" value="0"></progress>
+                </div>
+              </div>
+              <div id="tree" class="upload-visual empty">No uploads yet.</div>
+            </div>
+          </article>
+
           <article class="panel">
             <div class="panel-head">
               <h2>Notepad</h2>
@@ -73,30 +109,9 @@
               <textarea id="codeArea" class="code-input" disabled spellcheck="false" placeholder="Paste code or commands here."></textarea>
             </div>
           </article>
-
-          <article class="panel uploads">
-            <div class="panel-head">
-              <h2>Uploads</h2>
-              <button id="clearUploads" class="ghost danger" type="button" disabled>Clear uploads</button>
-            </div>
-            <div id="dropZone" class="drop-zone">
-              <strong>Drop files or folders here</strong>
-              <span>Folders keep their relative paths when the browser supports it.</span>
-            </div>
-            <div class="upload-controls">
-              <label class="button-like">
-                Choose files
-                <input id="filePicker" type="file" multiple disabled>
-              </label>
-              <button id="folderButton" type="button" disabled>Choose folder</button>
-              <input id="folderPicker" type="file" multiple webkitdirectory disabled>
-            </div>
-            <div id="uploadProgress" class="muted"></div>
-            <div id="tree" class="tree empty">No uploads yet.</div>
-          </article>
         </section>
       </section>
     </main>
-    <script src="/static/app.js?v=20260622-6"></script>
+    <script src="/static/app.js?v=20260622-8"></script>
   </body>
 </html>

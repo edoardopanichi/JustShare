@@ -58,6 +58,14 @@ def test_room_text_clear_and_upload_flow(tmp_path) -> None:
         assert folder.status_code == 200
         assert folder.headers["content-type"] == "application/zip"
 
+        all_uploads = client.get(f"/api/rooms/{code}/uploads/download")
+        assert all_uploads.status_code == 200
+        assert all_uploads.headers["content-type"] == "application/zip"
+
+        selected = client.get(f"/api/rooms/{code}/selection/download", params={"file_id": file_id})
+        assert selected.status_code == 200
+        assert selected.headers["content-type"] == "application/zip"
+
         cleared = client.delete(f"/api/rooms/{code}/uploads")
         assert cleared.status_code == 200
         assert cleared.json()["tree"]["children"] == []
