@@ -60,6 +60,16 @@ def test_room_text_clear_and_upload_flow(tmp_path) -> None:
 
         all_uploads = client.get(f"/api/rooms/{code}/uploads/download")
         assert all_uploads.status_code == 200
+        assert all_uploads.content == b"content"
+        assert all_uploads.headers["content-type"].startswith("text/plain")
+
+        files = [("files", ("sibling.txt", b"second", "text/plain"))]
+        data = {"relative_paths": "sibling.txt"}
+        response = client.post(f"/api/rooms/{code}/uploads", files=files, data=data)
+        assert response.status_code == 200
+
+        all_uploads = client.get(f"/api/rooms/{code}/uploads/download")
+        assert all_uploads.status_code == 200
         assert all_uploads.headers["content-type"] == "application/zip"
 
         selected = client.get(f"/api/rooms/{code}/selection/download", params={"file_id": file_id})

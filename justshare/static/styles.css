@@ -356,6 +356,15 @@ h2 {
   color: var(--danger);
 }
 
+.danger-fill {
+  background: var(--danger);
+  color: white;
+}
+
+.danger-fill:hover {
+  background: #8f1d14;
+}
+
 textarea {
   display: block;
   width: 100%;
@@ -625,6 +634,42 @@ textarea:disabled {
 .secondary-link[aria-disabled="true"] {
   opacity: 0.5;
   pointer-events: none;
+}
+
+.download-choice {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(23, 32, 51, 0.36);
+}
+
+.download-choice-panel {
+  width: min(100%, 440px);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  padding: 20px;
+}
+
+.download-choice-panel h2 {
+  margin-bottom: 8px;
+  font-size: 20px;
+}
+
+.download-choice-panel p {
+  color: var(--muted);
+  line-height: 1.45;
+  margin-bottom: 18px;
+}
+
+.download-choice-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .upload-browser {

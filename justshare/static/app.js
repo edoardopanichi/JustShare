@@ -808,6 +808,95 @@ function itemDownloadUrl(item, code) {
   return `/api/rooms/${encodeURIComponent(code)}/files/${encodeURIComponent(item.id)}/download`;
 }
 
+function allUploadsZipUrl(code) {
+  return `/api/rooms/${encodeURIComponent(code)}/uploads/download`;
+}
+
+function triggerDownload(url) {
+  const link = document.createElement("a");
+  link.href = url;
+  link.style.display = "none";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+}
+
+function closeDownloadChoice(dialog) {
+  dialog.remove();
+  document.removeEventListener("keydown", dialog.handleKeydown);
+}
+
+function showDownloadChoice(files, code) {
+  const dialog = document.createElement("div");
+  dialog.className = "download-choice";
+  dialog.setAttribute("role", "dialog");
+  dialog.setAttribute("aria-modal", "true");
+  dialog.setAttribute("aria-labelledby", "downloadChoiceTitle");
+
+  const panel = document.createElement("div");
+  panel.className = "download-choice-panel";
+
+  const title = document.createElement("h2");
+  title.id = "downloadChoiceTitle";
+  title.textContent = "Download all files";
+
+  const message = document.createElement("p");
+  message.textContent = `Choose how to download ${files.length} files.`;
+
+  const actions = document.createElement("div");
+  actions.className = "download-choice-actions";
+
+  const zip = document.createElement("button");
+  zip.type = "button";
+  zip.textContent = "One ZIP file";
+  zip.addEventListener("click", () => {
+    triggerDownload(allUploadsZipUrl(code));
+    closeDownloadChoice(dialog);
+  });
+
+  const separate = document.createElement("button");
+  separate.type = "button";
+  separate.className = "ghost";
+  separate.textContent = "Individual files";
+  separate.addEventListener("click", () => {
+    files.forEach((file, index) => {
+      window.setTimeout(() => triggerDownload(itemDownloadUrl(file, code)), index * 150);
+    });
+    setStatus(`Starting ${files.length} individual downloads.`);
+    closeDownloadChoice(dialog);
+  });
+
+  const cancel = document.createElement("button");
+  cancel.type = "button";
+  cancel.className = "danger-fill";
+  cancel.textContent = "Cancel";
+  cancel.addEventListener("click", () => closeDownloadChoice(dialog));
+
+  dialog.handleKeydown = (event) => {
+    if (event.key === "Escape") closeDownloadChoice(dialog);
+  };
+  dialog.addEventListener("click", (event) => {
+    if (event.target === dialog) closeDownloadChoice(dialog);
+  });
+  document.addEventListener("keydown", dialog.handleKeydown);
+
+  actions.append(zip, separate, cancel);
+  panel.append(title, message, actions);
+  dialog.appendChild(panel);
+  document.body.appendChild(dialog);
+  zip.focus();
+}
+
+function handleDownloadAll(items, code) {
+  const files = flattenUploads(items).filter((item) => item.type === "file");
+  if (files.length === 0) return;
+  if (files.length === 1) {
+    triggerDownload(itemDownloadUrl(files[0], code));
+    return;
+  }
+  showDownloadChoice(files, code);
+}
+
 function selectionDownloadUrl(code) {
   const params = new URLSearchParams();
   for (const key of state.selectedUploads) {
@@ -864,10 +953,11 @@ function renderCollapsedUploads(tree, items, code) {
 
   const actions = document.createElement("div");
   actions.className = "upload-stack-actions";
-  const downloadAll = document.createElement("a");
+  const downloadAll = document.createElement("button");
+  downloadAll.type = "button";
   downloadAll.className = "button-like secondary-link";
-  downloadAll.href = `/api/rooms/${encodeURIComponent(code)}/uploads/download`;
   downloadAll.textContent = "Download all";
+  downloadAll.addEventListener("click", () => handleDownloadAll(items, code));
   const expand = document.createElement("button");
   expand.type = "button";
   expand.className = "ghost";

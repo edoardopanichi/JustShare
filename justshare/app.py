@@ -196,6 +196,13 @@ def create_app(config: Config | None = None) -> FastAPI:
         try:
             code = db.require_room(code)
             rows = db.list_uploads(code)
+            if len(rows) == 1:
+                row = rows[0]
+                path = Path(row["filesystem_path"])
+                if not path.exists():
+                    raise HTTPException(status_code=404, detail="File missing on disk.")
+                db.touch_room(code)
+                return FileResponse(path, filename=Path(row["relative_path"]).name, media_type=row["mime_type"])
             zip_path = make_folder_zip(config.storage_dir, code, "", rows)
             db.touch_room(code)
         except (KeyError, ValueError):
