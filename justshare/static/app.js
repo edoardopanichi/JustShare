@@ -251,6 +251,18 @@ function roomShareUrl(code = state.code) {
   return url.toString();
 }
 
+function setRoomUrl(code) {
+  if (!window.history || !window.history.replaceState) return;
+  const url = new URL(window.location.href);
+  url.pathname = "/";
+  url.search = "";
+  url.hash = "";
+  if (code) {
+    url.searchParams.set("room", code);
+  }
+  window.history.replaceState({}, "", url.toString());
+}
+
 function api(path, options = {}) {
   return fetch(path, {
     headers: options.body instanceof FormData ? undefined : { "Content-Type": "application/json" },
@@ -283,6 +295,7 @@ async function joinRoom(code) {
     throw new Error("The room response did not include a room code.");
   }
   state.code = roomCode;
+  setRoomUrl(roomCode);
   els.roomCode.textContent = roomCode;
   els.roomInput.value = roomCode;
   els.roomBanner.classList.remove("hidden");
@@ -881,7 +894,10 @@ els.joinForm.addEventListener("submit", (event) => {
 });
 els.shareRoom.addEventListener("click", () => shareRoom().catch((error) => setStatus(error.message)));
 els.copyRoom.addEventListener("click", () => copyText(state.code || "", els.copyRoom, "Room code copied to clipboard."));
-els.leaveRoom.addEventListener("click", () => showGate("You left the room. Server data remains until it expires or is cleared."));
+els.leaveRoom.addEventListener("click", () => {
+  setRoomUrl("");
+  showGate("You left the room. Server data remains until it expires or is cleared.");
+});
 els.copyCode.addEventListener("click", () => copyText(els.codeArea.value, els.copyCode, "Code copied to clipboard."));
 els.clearNotepad.addEventListener("click", () => clearSection("notepad").catch((error) => setStatus(error.message)));
 els.clearCode.addEventListener("click", () => clearSection("code").catch((error) => setStatus(error.message)));
