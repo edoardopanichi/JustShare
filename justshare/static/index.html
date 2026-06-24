@@ -100,6 +100,27 @@
             <div class="panel-head">
               <h2>Code</h2>
               <div class="actions">
+                <label class="language-picker">
+                  <span>Language</span>
+                  <select id="codeLanguage" disabled>
+                    <option value="auto">Auto</option>
+                    <option value="plain">Plain text</option>
+                    <option value="json">JSON</option>
+                    <option value="markup">HTML / XML</option>
+                    <option value="markdown">Markdown</option>
+                    <option value="latex">LaTeX</option>
+                    <option value="typst">Typst</option>
+                    <option value="python">Python</option>
+                    <option value="javascript">JavaScript</option>
+                    <option value="css">CSS</option>
+                    <option value="rust">Rust</option>
+                    <option value="c">C</option>
+                    <option value="cpp">C++</option>
+                    <option value="matlab">MATLAB</option>
+                    <option value="bash">Bash</option>
+                    <option value="yaml">YAML</option>
+                  </select>
+                </label>
                 <button id="copyCode" class="ghost" type="button" disabled>Copy</button>
                 <button id="clearCode" class="ghost" type="button" disabled>Clear</button>
               </div>

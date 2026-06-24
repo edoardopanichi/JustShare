@@ -3,6 +3,8 @@ const state = {
   socket: null,
   localNotepadEdit: false,
   localCodeEdit: false,
+  codeLanguage: "auto",
+  detectedCodeLanguage: "plain",
   notepadTimer: null,
   codeTimer: null,
   uploadsExpanded: false,
@@ -30,6 +32,7 @@ const els = {
   notepad: $("notepad"),
   codeArea: $("codeArea"),
   codeHighlight: $("codeHighlight"),
+  codeLanguage: $("codeLanguage"),
   clearNotepad: $("clearNotepad"),
   clearCode: $("clearCode"),
   copyCode: $("copyCode"),
@@ -64,15 +67,160 @@ function escapeHtml(value) {
   })[char]);
 }
 
+function countMatches(value, pattern) {
+  const flags = pattern.flags.includes("g") ? pattern.flags : `${pattern.flags}g`;
+  return [...value.matchAll(new RegExp(pattern.source, flags))].length;
+}
+
+function addLanguageScore(scores, language, value, rules) {
+  for (const [pattern, weight] of rules) {
+    scores[language] += countMatches(value, pattern) * weight;
+  }
+}
+
 function detectLanguage(value) {
   const trimmed = value.trim();
   if (!trimmed) return "plain";
   if (/^({[\s\S]*}|\[[\s\S]*\])$/.test(trimmed)) return "json";
-  if (/<\/?[a-z][\s\S]*>/i.test(trimmed)) return "markup";
-  if (/\b(def|import|from|self|elif|print)\b|^\s*#.*$/m.test(trimmed)) return "python";
-  if (/\b(function|const|let|var|return|async|await|class|=>)\b/.test(trimmed)) return "javascript";
-  if (/[.#][\w-]+\s*\{|\b(color|display|margin|padding|grid|flex)\s*:/.test(trimmed)) return "css";
-  return "plain";
+  const scores = {
+    markup: 0,
+    markdown: 0,
+    latex: 0,
+    typst: 0,
+    python: 0,
+    javascript: 0,
+    css: 0,
+    rust: 0,
+    c: 0,
+    cpp: 0,
+    matlab: 0,
+    bash: 0,
+    yaml: 0,
+  };
+
+  addLanguageScore(scores, "markdown", trimmed, [
+    [/^#{1,6}\s+\S/gm, 4],
+    [/```/g, 4],
+    [/^\s*[-*+]\s+\S/gm, 1],
+    [/^\s*\d+\.\s+\S/gm, 1],
+    [/^\s*>\s+\S/gm, 2],
+    [/^\s*\|.+\|/gm, 2],
+    [/\[[^\]\n]+\]\([^)]+\)/g, 2],
+  ]);
+  addLanguageScore(scores, "markup", trimmed, [
+    [/<\/?[a-z][\w:-]*(?:\s+[^>]*)?>/gi, 5],
+    [/<!doctype\s+html/i, 6],
+    [/<!--[\s\S]*?-->/g, 2],
+  ]);
+  addLanguageScore(scores, "latex", trimmed, [
+    [/\\documentclass(?:\[[^\]]*\])?\{[^}]+\}/g, 10],
+    [/\\(?:begin|end)\{(?:document|equation|align|figure|table|itemize|enumerate|tabular)\}/g, 6],
+    [/\\(?:section|subsection|chapter|paragraph|caption|label|ref|cite|usepackage|textbf|emph)\b/g, 3],
+    [/\$(?:\\.|[^$\n])+\$/g, 2],
+    [/^\s*%.*$/gm, 1],
+  ]);
+  addLanguageScore(scores, "typst", trimmed, [
+    [/^\s*#(?:set|show|let|import|include)\b/gm, 7],
+    [/#(?:figure|table|image|bibliography|outline|align|grid|rect|circle|text|page)\s*\(/g, 4],
+    [/^\s*=\s+\S/gm, 4],
+    [/\$(?:\\.|[^$\n])+\$/g, 2],
+    [/\/\/.*$/gm, 1],
+  ]);
+  addLanguageScore(scores, "bash", trimmed, [
+    [/^#!.*\b(?:bash|sh|zsh)\b/gm, 8],
+    [/^\s*(?:sudo\s+)?(?:cd|ls|cp|mv|rm|mkdir|touch|grep|find|curl|wget|git|docker|npm|pip|python|py|ssh|scp)\b/gm, 3],
+    [/^\s*(?:if|then|elif|else|fi|case|esac|for|while|do|done)\b/gm, 2],
+    [/\$\{?[\w@#?$!-]+\}?/g, 1],
+  ]);
+  addLanguageScore(scores, "matlab", trimmed, [
+    [/^\s*%%?/gm, 4],
+    [/^\s*function\b/gm, 6],
+    [/^\s*end\s*$/gm, 3],
+    [/^\s*(?:classdef|properties|methods)\b/gm, 4],
+    [/\b(?:disp|fprintf|plot|zeros|ones|linspace|length|numel|squeeze|imagesc|xlabel|ylabel|colorbar|caxis|mat2str)\s*\(/g, 2],
+    [/%.*$/gm, 1],
+  ]);
+  addLanguageScore(scores, "rust", trimmed, [
+    [/^\s*(?:pub\s+)?fn\s+\w+/gm, 6],
+    [/\b(?:let\s+mut|impl|trait|enum|struct|crate|mod|match|Result|Option|Some|None|Ok|Err)\b/g, 3],
+    [/\bprintln!\s*\(/g, 4],
+    [/\b[a-zA-Z_]\w*::[a-zA-Z_]\w*/g, 2],
+  ]);
+  addLanguageScore(scores, "cpp", trimmed, [
+    [/#include\s*"[^"]+\.(?:hpp|hh|hxx)"/g, 7],
+    [/#include\s*<(?:iostream|vector|string|map|memory|algorithm|cmath|cstdint|stdexcept)>/g, 5],
+    [/\b(?:std::|using\s+namespace\s+std|cout\s*<<|cin\s*>>|template\s*<|namespace\s+\w+)\b/g, 5],
+    [/\bclass\s+\w+/g, 3],
+    [/\b(?:bool|nullptr|constexpr|typename|virtual|public|private|protected)\b/g, 2],
+  ]);
+  addLanguageScore(scores, "c", trimmed, [
+    [/#include\s*<[\w.]+>/g, 4],
+    [/\b(?:int|char|float|double|void|long|short|unsigned|signed)\b[\s\w,*]*\([^)]*\)\s*\{/g, 4],
+    [/\b(?:printf|scanf|malloc|free|sizeof|typedef|struct|enum)\b/g, 2],
+    [/\/\*[\s\S]*?\*\//g, 1],
+  ]);
+  addLanguageScore(scores, "yaml", trimmed, [
+    [/^---\s*$/gm, 4],
+    [/^\s{0,6}[\w.-]+\s*:\s*(?:$|[^{};()[\]])/gm, 2],
+    [/^\s*-\s+[\w.-]+\s*:/gm, 3],
+  ]);
+  addLanguageScore(scores, "python", trimmed, [
+    [/^#!.*\bpython/gm, 8],
+    [/^\s*(?:from\s+[\w.]+\s+import|import\s+[\w.]+)/gm, 5],
+    [/^\s*(?:def|class)\s+\w+/gm, 5],
+    [/@dataclass\b/g, 4],
+    [/\bself\b/g, 2],
+    [/\b(?:elif|except|finally|lambda|yield|None|True|False)\b/g, 2],
+    [/^\s*#.*$/gm, 1],
+  ]);
+  addLanguageScore(scores, "javascript", trimmed, [
+    [/\b(?:function|const|let|var|return|async|await|class)\b/g, 2],
+    [/=>/g, 3],
+    [/\b(?:document|window|console)\./g, 3],
+  ]);
+  addLanguageScore(scores, "css", trimmed, [
+    [/[.#][\w-]+\s*\{/g, 4],
+    [/\b(?:color|display|margin|padding|grid|flex|border|background|font-size)\s*:/g, 3],
+    [/@media\b/g, 3],
+  ]);
+
+  if (scores.cpp >= 7 && scores.c > 0) scores.cpp = Math.max(scores.cpp, scores.c + 1);
+  else if (scores.cpp >= 5 && scores.c > 0) scores.cpp += Math.min(scores.c, 8);
+  if (scores.python >= 6) scores.yaml = Math.max(0, scores.yaml - 4);
+  if (scores.matlab >= 6) scores.bash = Math.max(0, scores.bash - 4);
+  if (scores.c + scores.cpp > 0) scores.markup = Math.max(0, scores.markup - 6);
+  if (scores.latex >= 6) scores.markdown = Math.max(0, scores.markdown - 4);
+  if (scores.typst >= 7) scores.markdown = Math.max(0, scores.markdown - 4);
+
+  const [language, score] = Object.entries(scores).sort((a, b) => b[1] - a[1])[0];
+  return score >= 3 ? language : "plain";
+}
+
+function languageLabel(language) {
+  return ({
+    plain: "Plain text",
+    json: "JSON",
+    markup: "HTML / XML",
+    markdown: "Markdown",
+    latex: "LaTeX",
+    typst: "Typst",
+    python: "Python",
+    javascript: "JavaScript",
+    css: "CSS",
+    rust: "Rust",
+    c: "C",
+    cpp: "C++",
+    matlab: "MATLAB",
+    bash: "Bash",
+    yaml: "YAML",
+  })[language] || language;
+}
+
+function updateLanguagePicker() {
+  const detected = languageLabel(state.detectedCodeLanguage);
+  const auto = [...els.codeLanguage.options].find((option) => option.value === "auto");
+  if (auto) auto.textContent = `Auto (${detected})`;
+  els.codeLanguage.value = state.codeLanguage;
 }
 
 function renderTokens(value, pattern, tokenClass) {
@@ -91,7 +239,8 @@ function renderTokens(value, pattern, tokenClass) {
 }
 
 function highlightCode(value) {
-  const language = detectLanguage(value);
+  state.detectedCodeLanguage = detectLanguage(value);
+  const language = state.codeLanguage === "auto" ? state.detectedCodeLanguage : state.codeLanguage;
   let html = escapeHtml(value || " ");
 
   if (value && language === "markup") {
@@ -108,19 +257,62 @@ function highlightCode(value) {
       if (/[-_a-zA-Z][-\w]*/.test(match[0]) && value[match.index + match[0].length] === ":") return "tok-attr";
       return "tok-string";
     });
+  } else if (value && language === "markdown") {
+    html = renderTokens(value, /```[\s\S]*?```|`[^`\n]+`|^\s{0,3}#{1,6}\s.+$|^\s{0,3}>\s.+$|\*\*[^*\n]+\*\*|__[^_\n]+__|\[[^\]\n]+\]\([^)]+\)/gm, (match) => {
+      if (match[0].startsWith("```") || match[0].startsWith("`")) return "tok-string";
+      if (/^\s{0,3}#/.test(match[0])) return "tok-keyword";
+      if (/^\s{0,3}>/.test(match[0])) return "tok-comment";
+      if (match[0].startsWith("[")) return "tok-attr";
+      return "tok-keyword";
+    });
+  } else if (value && language === "latex") {
+    html = renderTokens(value, /%.*$|\\[a-zA-Z]+[*]?|\\.|(?:\{|\})|\$(?:\\.|[^$\n])+\$/gm, (match) => {
+      if (match[0].startsWith("%")) return "tok-comment";
+      if (match[0].startsWith("$")) return "tok-string";
+      if (match[0].startsWith("\\")) return "tok-keyword";
+      return "tok-attr";
+    });
+  } else if (value && language === "typst") {
+    html = renderTokens(value, /\/\/.*$|"(?:\\.|[^"\\])*"|`[^`\n]+`|\$(?:\\.|[^$\n])+\$|^\s*=+\s.+$|#[a-zA-Z_][\w-]*|#[\[{(]?|(?:\{|\}|\[|\])/gm, (match) => {
+      if (match[0].startsWith("//")) return "tok-comment";
+      if (/^["`$]/.test(match[0])) return "tok-string";
+      if (/^\s*=/.test(match[0]) || match[0].startsWith("#")) return "tok-keyword";
+      return "tok-attr";
+    });
+  } else if (value && language === "yaml") {
+    html = renderTokens(value, /#.*$|^\s*-\s+|^\s*[\w.-]+(?=\s*:)|:\s*[^#\n]+/gm, (match) => {
+      if (match[0].startsWith("#")) return "tok-comment";
+      if (/^\s*-/.test(match[0])) return "tok-keyword";
+      if (/^[\s\w.-]+$/.test(match[0])) return "tok-attr";
+      return "tok-string";
+    });
+  } else if (value && language === "matlab") {
+    html = renderTokens(value, /%.*$|"(?:\\.|[^"\\])*"|'(?:''|[^'\n])*'|\b\d+(?:\.\d+)?\b|\b(?:break|case|catch|classdef|continue|else|elseif|end|for|function|global|if|otherwise|parfor|persistent|return|switch|try|while|methods|properties)\b/gm, (match) => {
+      if (match[0].startsWith("%")) return "tok-comment";
+      if (/^["']/.test(match[0])) return "tok-string";
+      if (/^\d/.test(match[0])) return "tok-number";
+      return "tok-keyword";
+    });
   } else if (value) {
-    const keywords = /\b(async|await|break|case|class|const|def|elif|else|except|finally|for|from|function|if|import|in|let|new|null|return|self|try|var|while|true|false|None|pass)\b/;
-    html = renderTokens(value, /"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`|\/\/.*|#.*|\b0x[\da-fA-F]+\b|\b\d+(?:\.\d+)?\b|\b(?:async|await|break|case|class|const|def|elif|else|except|finally|for|from|function|if|import|in|let|new|null|return|self|try|var|while|true|false|None|pass)\b/g, (match) => {
+    const keywordPattern = {
+      bash: /\b(?:alias|case|cd|do|done|echo|elif|else|esac|export|fi|for|function|if|in|local|read|return|set|shift|then|unset|while)\b/,
+      c: /\b(?:auto|break|case|char|const|continue|default|do|double|else|enum|extern|float|for|goto|if|inline|int|long|register|return|short|signed|sizeof|static|struct|switch|typedef|union|unsigned|void|volatile|while)\b/,
+      cpp: /\b(?:alignas|auto|bool|break|case|catch|char|class|const|constexpr|continue|default|delete|do|double|else|enum|explicit|false|float|for|if|inline|int|long|namespace|new|nullptr|private|protected|public|return|short|sizeof|static|struct|switch|template|this|throw|true|try|typename|using|virtual|void|while)\b/,
+      rust: /\b(?:as|async|await|break|const|continue|crate|else|enum|extern|false|fn|for|if|impl|in|let|loop|match|mod|move|mut|pub|ref|return|self|Self|static|struct|super|trait|true|type|unsafe|use|where|while)\b/,
+    }[language] || /\b(async|await|break|case|class|const|def|elif|else|except|finally|for|from|function|if|import|in|let|new|null|return|self|try|var|while|true|false|None|pass)\b/;
+    html = renderTokens(value, /\/\*[\s\S]*?\*\/|\/\/.*|#.*|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`|\b0x[\da-fA-F]+\b|\b\d+(?:\.\d+)?\b|\b[A-Za-z_][\w]*!?(?=\s*\()|\b[A-Za-z_][\w]*\b/g, (match) => {
+      if (/^(\/\*|\/\/|#)/.test(match[0])) return "tok-comment";
       if (/^["'`]/.test(match[0])) return "tok-string";
-      if (/^(\/\/|#)/.test(match[0])) return "tok-comment";
       if (/^(0x|\d)/i.test(match[0])) return "tok-number";
-      if (keywords.test(match[0])) return "tok-keyword";
+      if (keywordPattern.test(match[0])) return "tok-keyword";
+      if (/\($/.test(value.slice(match.index + match[0].length, match.index + match[0].length + 1))) return "tok-attr";
       return "";
     });
   }
 
   els.codeHighlight.innerHTML = html;
   els.codeHighlight.dataset.language = language === "plain" ? "" : language;
+  updateLanguagePicker();
 }
 
 function setCodeValue(value) {
@@ -129,7 +321,7 @@ function setCodeValue(value) {
 }
 
 function setEnabled(enabled) {
-  for (const el of [els.notepad, els.codeArea, els.clearNotepad, els.clearCode, els.copyCode, els.clearUploads, els.filePicker, els.folderButton, els.folderPicker]) {
+  for (const el of [els.notepad, els.codeArea, els.codeLanguage, els.clearNotepad, els.clearCode, els.copyCode, els.clearUploads, els.filePicker, els.folderButton, els.folderPicker]) {
     el.disabled = !enabled;
   }
   setUploadControlsBusy(Boolean(state.uploadTask));
@@ -143,6 +335,8 @@ function showWorkspace() {
 
 function showGate(message = "Create a room or join one to start sharing.") {
   state.code = null;
+  state.codeLanguage = "auto";
+  state.detectedCodeLanguage = "plain";
   if (state.socket) {
     state.socket.close();
     state.socket = null;
@@ -911,6 +1105,10 @@ els.codeArea.addEventListener("input", () => {
   state.localCodeEdit = true;
   highlightCode(els.codeArea.value);
   debounceSave("code", els.codeArea.value);
+});
+els.codeLanguage.addEventListener("change", () => {
+  state.codeLanguage = els.codeLanguage.value;
+  highlightCode(els.codeArea.value);
 });
 els.codeArea.addEventListener("scroll", () => {
   els.codeHighlight.scrollTop = els.codeArea.scrollTop;
