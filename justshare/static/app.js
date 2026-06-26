@@ -812,6 +812,18 @@ function allUploadsZipUrl(code) {
   return `/api/rooms/${encodeURIComponent(code)}/uploads/download`;
 }
 
+function uploadsArchiveUrl(code) {
+  return `/api/rooms/${encodeURIComponent(code)}/uploads/archive`;
+}
+
+function uploadsArchiveStatusUrl(code, jobId) {
+  return `/api/rooms/${encodeURIComponent(code)}/uploads/archive/${encodeURIComponent(jobId)}`;
+}
+
+function uploadsArchiveDownloadUrl(code, jobId) {
+  return `/api/rooms/${encodeURIComponent(code)}/uploads/archive/${encodeURIComponent(jobId)}/download`;
+}
+
 function triggerDownload(url) {
   const link = document.createElement("a");
   link.href = url;
@@ -821,27 +833,67 @@ function triggerDownload(url) {
   link.remove();
 }
 
+function wait(ms) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
 function closeDownloadChoice(dialog) {
   dialog.remove();
   document.removeEventListener("keydown", dialog.handleKeydown);
 }
 
-function showDownloadChoice(files, code) {
+function updateDownloadProgress(progress, job) {
+  const done = formatBytes(job.bytes_done || 0);
+  const total = formatBytes(job.total_bytes || 0);
+  const filesDone = Number(job.files_done || 0);
+  const totalFiles = Number(job.total_files || 0);
+  progress.text.textContent = `Preparing ZIP: ${done} of ${total} (${filesDone}/${totalFiles} files)`;
+  progress.bar.value = Number(job.percent || 0);
+}
+
+async function prepareAndDownloadArchive(code, progress) {
+  const job = await api(uploadsArchiveUrl(code), { method: "POST" });
+  updateDownloadProgress(progress, job);
+  while (job.status !== "ready") {
+    if (job.status === "failed") {
+      throw new Error(job.error || "Could not prepare the ZIP file.");
+    }
+    await wait(700);
+    Object.assign(job, await api(uploadsArchiveStatusUrl(code, job.id)));
+    updateDownloadProgress(progress, job);
+  }
+  progress.text.textContent = "ZIP ready. Starting download...";
+  progress.bar.value = 100;
+  triggerDownload(uploadsArchiveDownloadUrl(code, job.id));
+}
+
+function showDownloadChoice(items, code) {
   const dialog = document.createElement("div");
   dialog.className = "download-choice";
   dialog.setAttribute("role", "dialog");
   dialog.setAttribute("aria-modal", "true");
   dialog.setAttribute("aria-labelledby", "downloadChoiceTitle");
+  dialog.downloadBusy = false;
 
   const panel = document.createElement("div");
   panel.className = "download-choice-panel";
 
   const title = document.createElement("h2");
   title.id = "downloadChoiceTitle";
-  title.textContent = "Download all files";
+  title.textContent = "Download all";
 
   const message = document.createElement("p");
-  message.textContent = `Choose how to download ${files.length} files.`;
+  const { files, folders, totalSize } = summarizeUploads(items);
+  message.textContent = `Choose how to download ${folders.length} folder${folders.length === 1 ? "" : "s"} and ${files.length} file${files.length === 1 ? "" : "s"} (${formatBytes(totalSize)}).`;
+
+  const progress = document.createElement("div");
+  progress.className = "download-progress hidden";
+  progress.text = document.createElement("span");
+  progress.text.textContent = "Preparing ZIP...";
+  progress.bar = document.createElement("progress");
+  progress.bar.max = 100;
+  progress.bar.value = 0;
+  progress.append(progress.text, progress.bar);
 
   const actions = document.createElement("div");
   actions.className = "download-choice-actions";
@@ -849,9 +901,23 @@ function showDownloadChoice(files, code) {
   const zip = document.createElement("button");
   zip.type = "button";
   zip.textContent = "One ZIP file";
-  zip.addEventListener("click", () => {
-    triggerDownload(allUploadsZipUrl(code));
-    closeDownloadChoice(dialog);
+  zip.addEventListener("click", async () => {
+    dialog.downloadBusy = true;
+    zip.disabled = true;
+    separate.disabled = true;
+    progress.classList.remove("hidden");
+    setStatus("Preparing ZIP download...");
+    try {
+      await prepareAndDownloadArchive(code, progress);
+      setStatus("ZIP download started.");
+      window.setTimeout(() => closeDownloadChoice(dialog), 1200);
+    } catch (error) {
+      dialog.downloadBusy = false;
+      zip.disabled = false;
+      separate.disabled = false;
+      progress.text.textContent = error.message;
+      setStatus(error.message);
+    }
   });
 
   const separate = document.createElement("button");
@@ -859,10 +925,10 @@ function showDownloadChoice(files, code) {
   separate.className = "ghost";
   separate.textContent = "Individual files";
   separate.addEventListener("click", () => {
-    files.forEach((file, index) => {
-      window.setTimeout(() => triggerDownload(itemDownloadUrl(file, code)), index * 150);
+    items.forEach((item, index) => {
+      window.setTimeout(() => triggerDownload(itemDownloadUrl(item, code)), index * 150);
     });
-    setStatus(`Starting ${files.length} individual downloads.`);
+    setStatus(`Starting ${items.length} individual download${items.length === 1 ? "" : "s"}.`);
     closeDownloadChoice(dialog);
   });
 
@@ -870,31 +936,32 @@ function showDownloadChoice(files, code) {
   cancel.type = "button";
   cancel.className = "danger-fill";
   cancel.textContent = "Cancel";
-  cancel.addEventListener("click", () => closeDownloadChoice(dialog));
+  cancel.addEventListener("click", () => {
+    if (!dialog.downloadBusy) closeDownloadChoice(dialog);
+  });
 
   dialog.handleKeydown = (event) => {
-    if (event.key === "Escape") closeDownloadChoice(dialog);
+    if (event.key === "Escape" && !dialog.downloadBusy) closeDownloadChoice(dialog);
   };
   dialog.addEventListener("click", (event) => {
-    if (event.target === dialog) closeDownloadChoice(dialog);
+    if (event.target === dialog && !dialog.downloadBusy) closeDownloadChoice(dialog);
   });
   document.addEventListener("keydown", dialog.handleKeydown);
 
   actions.append(zip, separate, cancel);
-  panel.append(title, message, actions);
+  panel.append(title, message, progress, actions);
   dialog.appendChild(panel);
   document.body.appendChild(dialog);
   zip.focus();
 }
 
 function handleDownloadAll(items, code) {
-  const files = flattenUploads(items).filter((item) => item.type === "file");
-  if (files.length === 0) return;
-  if (files.length === 1) {
-    triggerDownload(itemDownloadUrl(files[0], code));
+  if (items.length === 0) return;
+  if (items.length === 1) {
+    triggerDownload(itemDownloadUrl(items[0], code));
     return;
   }
-  showDownloadChoice(files, code);
+  showDownloadChoice(items, code);
 }
 
 function selectionDownloadUrl(code) {

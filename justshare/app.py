@@ -3,11 +3,13 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import shutil
+import time
+import uuid
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from .config import Config, load_config
@@ -17,12 +19,16 @@ from .security import is_allowed_client
 from .storage import (
     UnsafePathError,
     build_tree,
+    folder_zip_rows,
     make_folder_zip,
     make_selection_zip,
     remove_room_files,
     resolve_upload_path,
     room_upload_dir,
     sanitize_relative_path,
+    selection_zip_rows,
+    stream_rows_zip,
+    zip_filename,
 )
 
 
@@ -37,6 +43,7 @@ def create_app(config: Config | None = None) -> FastAPI:
     app.state.config = config
     app.state.db = db
     app.state.manager = manager
+    app.state.archive_jobs = {}
 
     static_dir = Path(__file__).parent / "static"
     app.mount("/static", StaticFiles(directory=static_dir), name="static")
@@ -60,7 +67,7 @@ def create_app(config: Config | None = None) -> FastAPI:
     @app.on_event("startup")
     async def startup() -> None:
         db.init()
-        app.state.cleanup_task = asyncio.create_task(cleanup_loop(db, manager, config))
+        app.state.cleanup_task = asyncio.create_task(cleanup_loop(db, manager, config, app.state.archive_jobs))
 
     @app.on_event("shutdown")
     async def shutdown() -> None:
@@ -183,13 +190,17 @@ def create_app(config: Config | None = None) -> FastAPI:
         try:
             code = db.require_room(code)
             rows = db.list_uploads(code)
-            zip_path = make_folder_zip(config.storage_dir, code, folder_path, rows)
+            label, matches = folder_zip_rows(folder_path, rows)
             db.touch_room(code)
         except UnsafePathError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
         except (KeyError, ValueError):
             raise HTTPException(status_code=404, detail="Room not found.")
-        return FileResponse(zip_path, filename=zip_path.name, media_type="application/zip", background=DeleteParent(zip_path))
+        return StreamingResponse(
+            stream_rows_zip(matches),
+            media_type="application/zip",
+            headers={"Content-Disposition": f'attachment; filename="{zip_filename(code, label)}"'},
+        )
 
     @app.get("/api/rooms/{code}/uploads/download")
     async def download_uploads(code: str):
@@ -203,10 +214,57 @@ def create_app(config: Config | None = None) -> FastAPI:
                     raise HTTPException(status_code=404, detail="File missing on disk.")
                 db.touch_room(code)
                 return FileResponse(path, filename=Path(row["relative_path"]).name, media_type=row["mime_type"])
-            zip_path = make_folder_zip(config.storage_dir, code, "", rows)
+            zip_path = await asyncio.to_thread(make_folder_zip, config.storage_dir, code, "", rows)
             db.touch_room(code)
         except (KeyError, ValueError):
             raise HTTPException(status_code=404, detail="Room not found.")
+        return FileResponse(zip_path, filename=zip_path.name, media_type="application/zip", background=DeleteParent(zip_path))
+
+    @app.post("/api/rooms/{code}/uploads/archive")
+    async def prepare_uploads_archive(code: str):
+        try:
+            code = db.require_room(code)
+            rows = db.list_uploads(code)
+            if not rows:
+                raise HTTPException(status_code=400, detail="No uploads to archive.")
+            job_id = uuid.uuid4().hex
+            job = new_archive_job(code, rows)
+            app.state.archive_jobs[job_id] = job
+            asyncio.create_task(run_archive_job(app, job_id, config.storage_dir, rows))
+            db.touch_room(code)
+            return archive_job_payload(job_id, job)
+        except (KeyError, ValueError):
+            raise HTTPException(status_code=404, detail="Room not found.")
+
+    @app.get("/api/rooms/{code}/uploads/archive/{job_id}")
+    async def get_uploads_archive(code: str, job_id: str):
+        try:
+            code = db.require_room(code)
+        except (KeyError, ValueError):
+            raise HTTPException(status_code=404, detail="Room not found.")
+        job = app.state.archive_jobs.get(job_id)
+        if not job or job["code"] != code:
+            raise HTTPException(status_code=404, detail="Archive job not found.")
+        return archive_job_payload(job_id, job)
+
+    @app.get("/api/rooms/{code}/uploads/archive/{job_id}/download")
+    async def download_uploads_archive(code: str, job_id: str):
+        try:
+            code = db.require_room(code)
+        except (KeyError, ValueError):
+            raise HTTPException(status_code=404, detail="Room not found.")
+        job = app.state.archive_jobs.get(job_id)
+        if not job or job["code"] != code:
+            raise HTTPException(status_code=404, detail="Archive job not found.")
+        if job["status"] == "failed":
+            raise HTTPException(status_code=500, detail=job["error"] or "Archive creation failed.")
+        if job["status"] != "ready" or not job["path"]:
+            raise HTTPException(status_code=409, detail="Archive is still being prepared.")
+        zip_path = Path(job["path"])
+        if not zip_path.exists():
+            raise HTTPException(status_code=404, detail="Archive missing on disk.")
+        app.state.archive_jobs.pop(job_id, None)
+        db.touch_room(code)
         return FileResponse(zip_path, filename=zip_path.name, media_type="application/zip", background=DeleteParent(zip_path))
 
     @app.get("/api/rooms/{code}/selection/download")
@@ -220,13 +278,17 @@ def create_app(config: Config | None = None) -> FastAPI:
         try:
             code = db.require_room(code)
             rows = db.list_uploads(code)
-            zip_path = make_selection_zip(code, rows, file_id, folder_path)
+            matches = selection_zip_rows(rows, file_id, folder_path)
             db.touch_room(code)
         except UnsafePathError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
         except (KeyError, ValueError):
             raise HTTPException(status_code=404, detail="Room not found.")
-        return FileResponse(zip_path, filename=zip_path.name, media_type="application/zip", background=DeleteParent(zip_path))
+        return StreamingResponse(
+            stream_rows_zip(matches),
+            media_type="application/zip",
+            headers={"Content-Disposition": f'attachment; filename="{zip_filename(code, "selection")}"'},
+        )
 
     @app.websocket("/ws/rooms/{code}")
     async def websocket_room(websocket: WebSocket, code: str) -> None:
@@ -283,12 +345,74 @@ def room_payload(db: Database, code: str) -> dict:
     }
 
 
-async def cleanup_loop(db: Database, manager: RoomConnectionManager, config: Config) -> None:
+def new_archive_job(code: str, rows: list[dict]) -> dict:
+    total_bytes = sum(int(row.get("size") or 0) for row in rows)
+    return {
+        "code": code,
+        "status": "preparing",
+        "bytes_done": 0,
+        "total_bytes": total_bytes,
+        "files_done": 0,
+        "total_files": len(rows),
+        "path": None,
+        "error": "",
+        "created_at": time.time(),
+    }
+
+
+def archive_job_payload(job_id: str, job: dict) -> dict:
+    total_bytes = int(job["total_bytes"] or 0)
+    bytes_done = min(int(job["bytes_done"] or 0), total_bytes)
+    percent = 100 if job["status"] == "ready" else (round((bytes_done / total_bytes) * 100) if total_bytes else 0)
+    return {
+        "id": job_id,
+        "status": job["status"],
+        "bytes_done": bytes_done,
+        "total_bytes": total_bytes,
+        "files_done": job["files_done"],
+        "total_files": job["total_files"],
+        "percent": min(100, percent),
+        "error": job["error"],
+    }
+
+
+async def run_archive_job(app: FastAPI, job_id: str, storage_dir: Path, rows: list[dict]) -> None:
+    job = app.state.archive_jobs[job_id]
+
+    def mark_file_done(size: int) -> None:
+        job["bytes_done"] += max(0, size)
+        job["files_done"] += 1
+
+    try:
+        zip_path = await asyncio.to_thread(make_folder_zip, storage_dir, job["code"], "", rows, mark_file_done)
+        job["path"] = str(zip_path)
+        job["bytes_done"] = job["total_bytes"]
+        job["files_done"] = job["total_files"]
+        job["status"] = "ready"
+    except Exception as exc:  # pragma: no cover - defensive job reporting
+        job["status"] = "failed"
+        job["error"] = str(exc)
+
+
+async def cleanup_loop(db: Database, manager: RoomConnectionManager, config: Config, archive_jobs: dict | None = None) -> None:
     while True:
         await asyncio.sleep(60)
+        if archive_jobs is not None:
+            cleanup_archive_jobs(archive_jobs)
         for code in db.expired_rooms(config.room_ttl_seconds, manager.active_room_codes()):
             remove_room_files(config.storage_dir, code)
             db.delete_room(code)
+
+
+def cleanup_archive_jobs(archive_jobs: dict, max_age_seconds: int = 1800) -> None:
+    now = time.time()
+    for job_id, job in list(archive_jobs.items()):
+        if job["status"] == "preparing" or now - job["created_at"] < max_age_seconds:
+            continue
+        path = job.get("path")
+        if path:
+            shutil.rmtree(Path(path).parent, ignore_errors=True)
+        archive_jobs.pop(job_id, None)
 
 
 class DeleteParent:

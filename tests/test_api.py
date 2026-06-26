@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import time
+import zipfile
 from contextlib import contextmanager
+from io import BytesIO
 
 from fastapi.testclient import TestClient
 
-from justshare.app import create_app
+from justshare.app import cleanup_archive_jobs, create_app
 from justshare.config import Config, load_config
 
 
@@ -57,6 +60,8 @@ def test_room_text_clear_and_upload_flow(tmp_path) -> None:
         folder = client.get(f"/api/rooms/{code}/folders/folder/download")
         assert folder.status_code == 200
         assert folder.headers["content-type"] == "application/zip"
+        with zipfile.ZipFile(BytesIO(folder.content)) as archive:
+            assert archive.namelist() == ["folder/child.txt"]
 
         all_uploads = client.get(f"/api/rooms/{code}/uploads/download")
         assert all_uploads.status_code == 200
@@ -75,6 +80,8 @@ def test_room_text_clear_and_upload_flow(tmp_path) -> None:
         selected = client.get(f"/api/rooms/{code}/selection/download", params={"file_id": file_id})
         assert selected.status_code == 200
         assert selected.headers["content-type"] == "application/zip"
+        with zipfile.ZipFile(BytesIO(selected.content)) as archive:
+            assert archive.namelist() == ["folder/child.txt"]
 
         cleared = client.delete(f"/api/rooms/{code}/uploads")
         assert cleared.status_code == 200
@@ -87,6 +94,65 @@ def test_room_payload_keeps_room_code_when_code_area_empty(tmp_path) -> None:
         state = client.get(f"/api/rooms/{code}").json()
         assert state["room_code"] == code
         assert state["code_text"] == ""
+
+
+def test_upload_archive_job_reports_progress_and_downloads_zip(tmp_path) -> None:
+    with make_client(tmp_path) as client:
+        code = client.post("/api/rooms").json()["code"]
+        response = client.post(
+            f"/api/rooms/{code}/uploads",
+            files=[
+                ("files", ("a.txt", b"alpha", "text/plain")),
+                ("files", ("b.txt", b"beta", "text/plain")),
+            ],
+            data={"relative_paths": ["folder/a.txt", "b.txt"]},
+        )
+        assert response.status_code == 200
+
+        created = client.post(f"/api/rooms/{code}/uploads/archive")
+        assert created.status_code == 200
+        job = created.json()
+        assert job["total_files"] == 2
+        assert job["total_bytes"] == 9
+
+        for _ in range(20):
+            job = client.get(f"/api/rooms/{code}/uploads/archive/{job['id']}").json()
+            if job["status"] == "ready":
+                break
+            time.sleep(0.05)
+        assert job["status"] == "ready"
+        assert job["percent"] == 100
+
+        download = client.get(f"/api/rooms/{code}/uploads/archive/{job['id']}/download")
+        assert download.status_code == 200
+        assert download.headers["content-type"] == "application/zip"
+        with zipfile.ZipFile(BytesIO(download.content)) as archive:
+            assert sorted(archive.namelist()) == ["b.txt", "folder/a.txt"]
+
+
+def test_stale_archive_jobs_are_cleaned_up(tmp_path) -> None:
+    zip_dir = tmp_path / "job"
+    zip_dir.mkdir()
+    zip_path = zip_dir / "abandoned.zip"
+    zip_path.write_bytes(b"zip")
+    jobs = {
+        "old": {
+            "status": "ready",
+            "created_at": time.time() - 3600,
+            "path": str(zip_path),
+        },
+        "active": {
+            "status": "preparing",
+            "created_at": time.time() - 3600,
+            "path": "",
+        },
+    }
+
+    cleanup_archive_jobs(jobs, max_age_seconds=1800)
+
+    assert "old" not in jobs
+    assert not zip_dir.exists()
+    assert "active" in jobs
 
 
 def test_websocket_receives_text_updates(tmp_path) -> None:

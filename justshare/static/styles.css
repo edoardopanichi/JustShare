@@ -666,6 +666,29 @@ textarea:disabled {
   margin-bottom: 18px;
 }
 
+.download-progress {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcff;
+  display: grid;
+  gap: 8px;
+  margin-bottom: 18px;
+  padding: 10px;
+}
+
+.download-progress span {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.download-progress progress {
+  width: 100%;
+  height: 12px;
+  accent-color: var(--brand);
+}
+
 .download-choice-actions {
   display: flex;
   flex-wrap: wrap;
