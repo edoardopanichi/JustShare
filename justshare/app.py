@@ -2,15 +2,17 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import math
 import shutil
 import time
 import uuid
 from pathlib import Path
 
-from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.datastructures import UploadFile
 
 from .config import Config, load_config
 from .db import Database
@@ -118,11 +120,18 @@ def create_app(config: Config | None = None) -> FastAPI:
     @app.post("/api/rooms/{code}/uploads")
     async def upload_files(
         code: str,
-        files: list[UploadFile] = File(...),
-        relative_paths: list[str] | None = Form(default=None),
+        request: Request,
     ) -> dict:
+        form = await request.form(
+            max_files=multipart_file_limit(config.max_upload_files),
+            max_fields=multipart_file_limit(config.max_upload_files),
+        )
         try:
             code = db.require_room(code)
+            files = form.getlist("files")
+            if not files or any(not isinstance(item, UploadFile) for item in files):
+                raise HTTPException(status_code=400, detail="No files were uploaded.")
+            relative_paths = form.getlist("relative_paths")
             if relative_paths and len(relative_paths) != len(files):
                 raise HTTPException(status_code=400, detail="relative_paths must match files.")
             for index, upload in enumerate(files):
@@ -150,6 +159,8 @@ def create_app(config: Config | None = None) -> FastAPI:
             raise HTTPException(status_code=400, detail=str(exc))
         except (KeyError, ValueError):
             raise HTTPException(status_code=404, detail="Room not found.")
+        finally:
+            await form.close()
 
     @app.get("/api/rooms/{code}/tree")
     async def get_tree(code: str) -> dict:
@@ -343,6 +354,12 @@ def room_payload(db: Database, code: str) -> dict:
         "code_text": state["code_text"],
         "tree": build_tree(state["uploads"]),
     }
+
+
+def multipart_file_limit(max_upload_files: int) -> int | float:
+    if max_upload_files <= 0:
+        return math.inf
+    return max_upload_files
 
 
 def new_archive_job(code: str, rows: list[dict]) -> dict:

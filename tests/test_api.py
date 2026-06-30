@@ -19,6 +19,7 @@ def make_client(tmp_path):
         port=8787,
         storage_dir=tmp_path,
         room_ttl_seconds=3600,
+        max_upload_files=10000,
         allowed_networks=base.allowed_networks,
     )
     app = create_app(config)
@@ -128,6 +129,22 @@ def test_upload_archive_job_reports_progress_and_downloads_zip(tmp_path) -> None
         assert download.headers["content-type"] == "application/zip"
         with zipfile.ZipFile(BytesIO(download.content)) as archive:
             assert sorted(archive.namelist()) == ["b.txt", "folder/a.txt"]
+
+
+def test_upload_accepts_more_than_starlette_default_file_limit(tmp_path) -> None:
+    with make_client(tmp_path) as client:
+        code = client.post("/api/rooms").json()["code"]
+        count = 1001
+        response = client.post(
+            f"/api/rooms/{code}/uploads",
+            files=[("files", (f"{index}.txt", b"x", "text/plain")) for index in range(count)],
+            data={"relative_paths": [f"folder/{index}.txt" for index in range(count)]},
+        )
+
+        assert response.status_code == 200
+        folder = response.json()["tree"]["children"][0]
+        assert folder["name"] == "folder"
+        assert len(folder["children"]) == count
 
 
 def test_stale_archive_jobs_are_cleaned_up(tmp_path) -> None:

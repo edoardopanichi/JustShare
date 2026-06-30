@@ -15,6 +15,7 @@ class Config:
     port: int
     storage_dir: Path
     room_ttl_seconds: int
+    max_upload_files: int
     allowed_networks: tuple
 
 
@@ -34,6 +35,7 @@ def load_config() -> Config:
         port=int(os.getenv("JUSTSHARE_PORT", "8787")),
         storage_dir=storage_dir,
         room_ttl_seconds=int(os.getenv("JUSTSHARE_ROOM_TTL_SECONDS", "3600")),
+        max_upload_files=int(os.getenv("JUSTSHARE_MAX_UPLOAD_FILES", "10000")),
         allowed_networks=_parse_allowed_networks(
             os.getenv("JUSTSHARE_ALLOWED_NETWORKS", DEFAULT_ALLOWED_NETWORKS)
         ),

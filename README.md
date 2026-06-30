@@ -141,6 +141,7 @@ export JUSTSHARE_HOST=0.0.0.0
 export JUSTSHARE_PORT=8787
 export JUSTSHARE_STORAGE_DIR=./data
 export JUSTSHARE_ROOM_TTL_SECONDS=3600
+export JUSTSHARE_MAX_UPLOAD_FILES=10000
 export JUSTSHARE_ALLOWED_NETWORKS=10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,127.0.0.1/32
 ```
 
@@ -149,8 +150,11 @@ PowerShell:
 ```powershell
 $env:JUSTSHARE_PORT = "8787"
 $env:JUSTSHARE_STORAGE_DIR = ".\data"
+$env:JUSTSHARE_MAX_UPLOAD_FILES = "10000"
 .\run_justshare.ps1
 ```
+
+`JUSTSHARE_MAX_UPLOAD_FILES` controls how many files can be uploaded in one request. Set it to `0` to remove the count limit, but large folders can still be constrained by browser memory, request size, disk space, and server load.
 
 ## Always-On Deployment
 
