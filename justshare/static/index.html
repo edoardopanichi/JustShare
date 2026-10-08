@@ -133,6 +133,22 @@
         </section>
       </section>
     </main>
-    <script src="/static/app.js?v=20260625-1"></script>
+    <dialog id="shareDialog" class="share-dialog" aria-labelledby="shareTitle">
+      <div class="panel-head">
+        <h2 id="shareTitle">Share room</h2>
+        <button id="closeShare" class="ghost" type="button" aria-label="Close share dialog">Close</button>
+      </div>
+      <div class="share-content">
+        <label for="shareLink">Room link</label>
+        <div class="share-link-row">
+          <input id="shareLink" type="text" readonly>
+          <button id="copyShareLink" type="button">Copy link</button>
+        </div>
+        <img id="shareQr" class="share-qr" width="256" height="256" alt="Scan this QR code to open the room on your phone">
+        <p id="shareHint">Scan with your phone camera to join this room. Connect your phone to the same local network.</p>
+        <p id="shareQrError" class="hidden" role="status">Could not load the QR code. You can still copy the room link above.</p>
+      </div>
+    </dialog>
+    <script src="/static/app.js?v=20261008-1"></script>
   </body>
 </html>

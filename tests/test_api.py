@@ -4,6 +4,10 @@ import time
 import zipfile
 from contextlib import contextmanager
 from io import BytesIO
+from unittest.mock import patch
+
+import qrcode
+from qrcode.image.svg import SvgPathFillImage
 
 from fastapi.testclient import TestClient
 
@@ -25,6 +29,21 @@ def make_client(tmp_path):
     app = create_app(config)
     with TestClient(app) as client:
         yield client
+
+
+def test_room_qr_encodes_share_link(tmp_path) -> None:
+    with make_client(tmp_path) as client:
+        code = client.post("/api/rooms").json()["code"]
+        with patch("justshare.app.qrcode.make", wraps=qrcode.make) as generate:
+            response = client.get(f"/api/rooms/{code}/qr")
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "image/svg+xml"
+        assert response.headers["cache-control"] == "no-store"
+        assert b"<svg" in response.content
+        generate.assert_called_once_with(
+            f"http://testserver/?room={code}", image_factory=SvgPathFillImage, border=4
+        )
+        assert client.get("/api/rooms/missing-room-code/qr").status_code == 404
 
 
 def test_room_text_clear_and_upload_flow(tmp_path) -> None:

@@ -7,10 +7,14 @@ import shutil
 import time
 import uuid
 from pathlib import Path
+from urllib.parse import urlencode
+
+import qrcode
+from qrcode.image.svg import SvgPathFillImage
 
 from fastapi import FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.datastructures import UploadFile
 
@@ -100,6 +104,16 @@ def create_app(config: Config | None = None) -> FastAPI:
             return room_payload(db, state["code"])
         except (KeyError, ValueError):
             raise HTTPException(status_code=404, detail="Room not found.")
+
+    @app.get("/api/rooms/{code}/qr")
+    def room_qr(code: str, request: Request) -> Response:
+        try:
+            code = db.require_room(code)
+        except (KeyError, ValueError):
+            raise HTTPException(status_code=404, detail="Room not found.")
+        url = str(request.base_url) + "?" + urlencode({"room": code})
+        image = qrcode.make(url, image_factory=SvgPathFillImage, border=4)
+        return Response(image.to_string(), media_type="image/svg+xml", headers={"Cache-Control": "no-store"})
 
     @app.put("/api/rooms/{code}/notepad")
     async def set_notepad(code: str, payload: dict) -> dict:

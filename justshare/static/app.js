@@ -23,6 +23,13 @@ const els = {
   roomBanner: $("roomBanner"),
   roomCode: $("roomCode"),
   shareRoom: $("shareRoom"),
+  shareDialog: $("shareDialog"),
+  closeShare: $("closeShare"),
+  shareLink: $("shareLink"),
+  copyShareLink: $("copyShareLink"),
+  shareQr: $("shareQr"),
+  shareHint: $("shareHint"),
+  shareQrError: $("shareQrError"),
   copyRoom: $("copyRoom"),
   leaveRoom: $("leaveRoom"),
   warning: $("warning"),
@@ -1152,7 +1159,7 @@ async function writeClipboard(value) {
   textarea.style.position = "fixed";
   textarea.style.top = "-1000px";
   textarea.style.left = "-1000px";
-  document.body.appendChild(textarea);
+  (document.querySelector("dialog[open]") || document.body).appendChild(textarea);
   textarea.focus();
   textarea.select();
 
@@ -1184,7 +1191,16 @@ async function shareRoom() {
   const code = currentRoomCode();
   if (!code) return;
   const url = roomShareUrl(code);
-  await copyText(url, els.shareRoom, `Share link copied: ${url}`, `Copy failed. Share this link manually: ${url}`);
+  els.shareLink.value = url;
+  els.shareQrError.classList.add("hidden");
+  els.shareQr.classList.remove("hidden");
+  els.shareQr.src = `/api/rooms/${encodeURIComponent(code)}/qr`;
+  const localOnly = ["localhost", "127.0.0.1", "[::1]"].includes(window.location.hostname);
+  els.shareHint.textContent = localOnly
+    ? "Open JustShare using the server's LAN address, then share again so your phone can reach the room."
+    : "Scan with your phone camera to join this room. Connect your phone to the same local network.";
+  els.shareDialog.showModal();
+  await copyText(url, els.copyShareLink, `Share link copied: ${url}`, `Copy failed. Share this link manually: ${url}`);
 }
 
 function initialSharedRoomCode() {
@@ -1244,6 +1260,12 @@ els.joinForm.addEventListener("submit", (event) => {
   joinRoom(els.roomInput.value).catch((error) => setStatus(error.message));
 });
 els.shareRoom.addEventListener("click", () => shareRoom().catch((error) => setStatus(error.message)));
+els.closeShare.addEventListener("click", () => els.shareDialog.close());
+els.copyShareLink.addEventListener("click", () => copyText(els.shareLink.value, els.copyShareLink, "Share link copied to clipboard."));
+els.shareQr.addEventListener("error", () => {
+  els.shareQr.classList.add("hidden");
+  els.shareQrError.classList.remove("hidden");
+});
 els.copyRoom.addEventListener("click", () => copyText(state.code || "", els.copyRoom, "Room code copied to clipboard."));
 els.leaveRoom.addEventListener("click", () => {
   setRoomUrl("");
