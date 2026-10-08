@@ -103,7 +103,20 @@ function detectLanguage(value) {
     matlab: 0,
     bash: 0,
     yaml: 0,
+    st: 0,
   };
+
+  const stCode = trimmed.replace(/\(\*[\s\S]*?\*\)|\/\/[^\n]*|'(?:\$[^\n]|''|[^'\n])*'|"(?:\$[^\n]|""|[^"\n])*"/g, " ");
+  addLanguageScore(scores, "st", stCode, [
+    [/^\s*(?:PROGRAM|FUNCTION_BLOCK)\s+\w+\b/gim, 7],
+    [/^\s*(?:FUNCTION|METHOD|PROPERTY)\s+\w+\s*:/gim, 7],
+    [/\b(?:END_PROGRAM|END_FUNCTION_BLOCK|END_FUNCTION|END_VAR|END_IF|END_CASE|END_FOR|END_WHILE|END_REPEAT|END_STRUCT|END_TYPE)\b/gi, 6],
+    [/^\s*VAR(?:_INPUT|_OUTPUT|_IN_OUT|_GLOBAL|_TEMP|_STAT|_EXTERNAL)?\b/gim, 4],
+    [/\b\w+\s*:\s*(?:BOOL|BYTE|WORD|DWORD|LWORD|SINT|INT|DINT|LINT|USINT|UINT|UDINT|ULINT|REAL|LREAL|TIME|LTIME|DATE|STRING|WSTRING|ARRAY|STRUCT)\b/gi, 4],
+    [/^\s*[\w.]+(?:\[[^\]\n]+\])?\s*:=/gm, 3],
+    [/\b(?:IF|ELSIF|WHILE)\b[^;\n]*\b(?:THEN|DO)\b/gi, 4],
+    [/\b(?:T|TIME|LTIME|DATE|D|TOD|DT|BOOL|WORD|DWORD|INT|DINT|REAL|LREAL)#[\w.+-]+/gi, 3],
+  ]);
 
   addLanguageScore(scores, "markdown", trimmed, [
     [/^#{1,6}\s+\S/gm, 4],
@@ -220,6 +233,7 @@ function languageLabel(language) {
     matlab: "MATLAB",
     bash: "Bash",
     yaml: "YAML",
+    st: "Structured Text (ST)",
   })[language] || language;
 }
 
@@ -292,6 +306,17 @@ function highlightCode(value) {
       if (/^\s*-/.test(match[0])) return "tok-keyword";
       if (/^[\s\w.-]+$/.test(match[0])) return "tok-attr";
       return "tok-string";
+    });
+  } else if (value && language === "st") {
+    const keywords = /^(?:PROGRAM|END_PROGRAM|FUNCTION|END_FUNCTION|FUNCTION_BLOCK|END_FUNCTION_BLOCK|METHOD|END_METHOD|PROPERTY|END_PROPERTY|ACTION|END_ACTION|ACTIONS|END_ACTIONS|VAR|VAR_INPUT|VAR_OUTPUT|VAR_IN_OUT|VAR_GLOBAL|VAR_TEMP|VAR_STAT|VAR_EXTERNAL|END_VAR|CONSTANT|RETAIN|PERSISTENT|AT|IF|THEN|ELSIF|ELSE|END_IF|CASE|OF|END_CASE|FOR|TO|BY|DO|END_FOR|WHILE|END_WHILE|REPEAT|UNTIL|END_REPEAT|RETURN|EXIT|CONTINUE|AND|OR|XOR|NOT|MOD|TRUE|FALSE|TYPE|END_TYPE|STRUCT|END_STRUCT|ARRAY|POINTER|REFERENCE|BOOL|BYTE|WORD|DWORD|LWORD|SINT|INT|DINT|LINT|USINT|UINT|UDINT|ULINT|REAL|LREAL|TIME|LTIME|DATE|TIME_OF_DAY|DATE_AND_TIME|STRING|WSTRING)$/i;
+    html = renderTokens(value, /\(\*[\s\S]*?\*\)|\/\/[^\n]*|'(?:\$[^\n]|''|[^'\n])*'|"(?:\$[^\n]|""|[^"\n])*"|\b(?:[A-Za-z_]\w*#)?(?:2#[01_]+|8#[0-7_]+|16#[\da-f_]+|\d[\w.#]*(?:[+-]\d+)?|TRUE\b|FALSE\b)|\b[A-Za-z_]\w*\b/gi, (match) => {
+      const token = match[0];
+      if (/^(\(\*|\/\/)/.test(token)) return "tok-comment";
+      if (/^["']/.test(token)) return "tok-string";
+      if (keywords.test(token)) return "tok-keyword";
+      if (/^(\d|[A-Za-z_]\w*#)/.test(token)) return "tok-number";
+      if (/^\s*\(/.test(value.slice(match.index + token.length))) return "tok-attr";
+      return "";
     });
   } else if (value && language === "matlab") {
     html = renderTokens(value, /%.*$|"(?:\\.|[^"\\])*"|'(?:''|[^'\n])*'|\b\d+(?:\.\d+)?\b|\b(?:break|case|catch|classdef|continue|else|elseif|end|for|function|global|if|otherwise|parfor|persistent|return|switch|try|while|methods|properties)\b/gm, (match) => {
@@ -710,6 +735,29 @@ function handleUploadError(task, error) {
     return;
   }
   completeUploadTask(task, error.message, Number(els.uploadProgressBar.value || 0));
+}
+
+function handleUploadPaste(event) {
+  if (!state.code || event.defaultPrevented) return;
+  if (event.target.closest("input, textarea, [contenteditable], dialog")) return;
+  const files = Array.from(event.clipboardData?.files || []);
+  if (!files.length) return;
+  event.preventDefault();
+  if (state.uploadTask) {
+    setStatus("An upload is already running. Stop it before starting another one.");
+    return;
+  }
+  const items = files.map((file) => {
+    if (file.type.startsWith("image/")) {
+      const extension = { "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp", "image/gif": "gif", "image/bmp": "bmp" }[file.type];
+      if (extension) {
+        const name = `screenshot-${Date.now()}-${Math.random().toString(36).slice(2, 10)}.${extension}`;
+        file = new File([file], name, { type: file.type });
+      }
+    }
+    return { file, path: file.name };
+  });
+  uploadCollected(items);
 }
 
 async function uploadCollected(items, existingTask = null) {
@@ -1299,6 +1347,8 @@ els.filePicker.addEventListener("click", () => {
 els.filePicker.addEventListener("change", () => uploadCollected(pickerFiles(els.filePicker)));
 els.folderPicker.addEventListener("change", () => uploadCollected(pickerFiles(els.folderPicker)));
 els.cancelUpload.addEventListener("click", cancelActiveUpload);
+els.dropZone.addEventListener("click", () => els.dropZone.focus());
+document.addEventListener("paste", handleUploadPaste);
 els.dropZone.addEventListener("dragover", (event) => {
   event.preventDefault();
   if (state.uploadTask) return;

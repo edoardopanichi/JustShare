@@ -525,9 +525,15 @@ textarea:disabled {
   color: var(--text);
 }
 
-.drop-zone.dragging {
+.drop-zone.dragging,
+.drop-zone:focus-visible {
   border-color: var(--brand);
   background: #edf5ff;
+}
+
+.drop-zone:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
 }
 
 .upload-controls,

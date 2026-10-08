@@ -62,8 +62,9 @@
             </div>
             <div class="upload-layout">
               <div>
-                <div id="dropZone" class="drop-zone">
-                  <strong>Drop files or folders here</strong>
+                <div id="dropZone" class="drop-zone" tabindex="0" aria-label="Upload files: drop files or folders, or paste a copied screenshot with Ctrl+V">
+                  <strong>Drop files or folders, or paste a screenshot</strong>
+                  <span>Click here and press Ctrl+V to upload a copied screenshot.</span>
                   <span>Folders keep their relative paths when the browser supports it.</span>
                 </div>
                 <div class="upload-controls">
@@ -117,6 +118,7 @@
                     <option value="c">C</option>
                     <option value="cpp">C++</option>
                     <option value="matlab">MATLAB</option>
+                    <option value="st">Structured Text (ST)</option>
                     <option value="bash">Bash</option>
                     <option value="yaml">YAML</option>
                   </select>
@@ -149,6 +151,6 @@
         <p id="shareQrError" class="hidden" role="status">Could not load the QR code. You can still copy the room link above.</p>
       </div>
     </dialog>
-    <script src="/static/app.js?v=20261008-1"></script>
+    <script src="/static/app.js?v=20261008-3"></script>
   </body>
 </html>
